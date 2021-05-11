@@ -1,0 +1,185 @@
+CREATE Procedure [Reporting].[uSp_OperationalAreas_Cencosud_Trazabilidad_MDH]
+AS
+BEGIN
+
+	SET DATEFIRST 1
+	SET LANGUAGE SPANISH
+	SET QUOTED_IDENTIFIER OFF
+
+	DECLARE
+		@SubscriptionID UNIQUEIDENTIFIER,
+		@ScheduleID UNIQUEIDENTIFIER,
+		--Parametro Reporte --
+		@pFechaInicio VARCHAR(21),
+		@pFechaFinal VARCHAR(21),
+		@pNewreport varchar(400),
+		--Parametros
+		@Destinatarios VARCHAR(250),
+		@DestinatariosConCopia VARCHAR(250),
+		@DestinatariosOcultos VARCHAR(250),
+		@ResponderA VARCHAR(250),
+		@Asunto VARCHAR(250),
+		@IncluirInforme VARCHAR(5),
+		@FormatoRepresentacion VARCHAR(250),
+		@IncluirVinculo VARCHAR(5),
+		@Prioridad VARCHAR(250),
+		@Cuerpo VARCHAR(4000),
+		@dia varchar(15),
+		@Nombre VARCHAR(60);
+
+	SET @ScheduleID = 'BABC7BF6-F84C-476F-8077-124DB18A10DD'; -- pasar job
+
+	SELECT
+			@Destinatarios = A.[Destinatarios], 
+			@DestinatariosConCopia = A.[DestinatariosConCopia], 
+			@DestinatariosOcultos = A.[DestinatariosOcultos], 
+			@ResponderA = A.[ResponderA], 
+			@Asunto = A.[Asunto], 
+			@IncluirInforme = (CASE WHEN A.[IncluirInforme] = 1 THEN 'True' ELSE 'False' END), 
+			@FormatoRepresentacion = B.FormatRepre, 
+			@IncluirVinculo = (CASE WHEN A.[IncluirVinculo] = 1 THEN 'True' ELSE 'False' END), 
+			@Prioridad = C.PriorityDesc, 
+			@Cuerpo = A.[Cuerpo]
+		FROM ReportServer.Reporting.MailParameter  A
+	INNER JOIN ReportServer.Reporting.DownloadTypeParameter B
+		ON A.IdParameter = B.IdParameter
+	INNER JOIN ReportServer.Reporting.ParameterPriority C
+		ON A.Prioridad = C.IDPriority
+	WHERE IdMail = 66;
+	
+	
+
+	SET @SubscriptionID =
+						(
+							SELECT SubscriptionID
+							FROM ReportServer.dbo.ReportSchedule rs
+  							WHERE rs.ScheduleID = @ScheduleID
+						);
+
+	DECLARE @InactiveFlags INT
+
+	SET @InactiveFlags = (SELECT InactiveFlags FROM ReportServer.dbo.Subscriptions WHERE SubscriptionID = @SubscriptionID)
+
+	IF (@InactiveFlags = 8)
+	BEGIN
+	UPDATE ReportServer.dbo.Subscriptions
+	SET
+	InactiveFlags = 0 
+	WHERE SubscriptionID = @SubscriptionID
+	END
+		
+		--declare @dia varchar(15),
+		--		@pFechaInicio varchar(25),
+		--		@pFechaFinal varchar(25),
+		--		@pNewreport varchar(400)
+
+	  		SET @pFechaInicio =  RIGHT(cast(getdate()-1 as date),2) + ' ' + replace(left(convert(varchar(12),getdate() -1,109),4),' ','.') +' ' + ltrim(RIGHT( convert(varchar(12),getdate() -1,109),6))+'00:00:00'
+			SET @pFechaFinal =   RIGHT(cast(getdate() -1 as date),2) + ' ' + replace(left(convert(varchar(12),getdate() -1,109),4),' ','.') +' ' + ltrim(RIGHT( convert(varchar(12),getdate() -1,109),6))+'22:00:00'
+			Set @pNewreport = ' Cencosud MDH '+ left(@pFechaFinal,12)
+	
+	
+	  --select @pFechaInicio,@pFechaFinal,@dia ,@pNewreport
+	
+	SELECT
+		SubscriptionID,
+		CAST(ExtensionSettings AS XML) ExtensionSettings,
+		CAST(Parameters AS XML) Parameters
+	INTO #XML_PRE
+	FROM ReportServer.dbo.subscriptions
+	WHERE SubscriptionID = @SubscriptionID
+
+	SELECT
+		SubscriptionID,
+		ExtensionSettings,
+		Parameters
+	INTO #XML_POST
+	FROM #XML_PRE
+
+	--select * from #XML_POST
+
+	UPDATE #XML_POST
+		SET Parameters.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[1] with (sql:variable("@pFechaInicio"))')
+	UPDATE #XML_POST
+		SET Parameters.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[2] with (sql:variable("@pFechaFinal"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[1] with (sql:variable("@Destinatarios"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[2] with (sql:variable("@DestinatariosConCopia"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[3] with (sql:variable("@DestinatariosOcultos"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[4] with (sql:variable("@ResponderA"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[5] with (sql:variable("@IncluirInforme"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[6] with (sql:variable("@FormatoRepresentacion"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[7] with (sql:variable("@Asunto"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[8] with (sql:variable("@Cuerpo"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[9] with (sql:variable("@IncluirVinculo"))')
+	UPDATE #XML_POST
+		SET ExtensionSettings.modify('replace value of (/ParameterValues/ParameterValue/Value/text())[10] with (sql:variable("@Prioridad"))')
+	UPDATE ReportServer.dbo.subscriptions
+	SET
+		ExtensionSettings = x.ExtensionSettings,
+		Parameters = x.Parameters
+	FROM ReportServer.dbo.subscriptions s
+	INNER JOIN	(
+				SELECT
+					SubscriptionID,
+					CAST(CONVERT(VARCHAR(MAX),ExtensionSettings) AS NTEXT) ExtensionSettings,
+					CAST(CONVERT(VARCHAR(MAX),Parameters) AS NTEXT) Parameters
+				FROM #XML_POST
+				) x ON s.SubscriptionID = x.SubscriptionID
+	WHERE s.SubscriptionID = @SubscriptionID
+	
+	/***Actualiza El Nombre Del Reporte***/
+
+	SET @Nombre = @pNewreport--' - ' + left(replace(@pFechaInicio,'/',''),6)
+
+	UPDATE c 
+		set 
+			c.Path = c.Path + @Nombre
+	from ReportServer.dbo.Subscriptions s 
+	Inner Join ReportServer.dbo.Catalog c 
+		on s.Report_OID=c.ItemID
+	where s.SubscriptionID = @SubscriptionID
+
+	EXEC ReportServer.dbo.AddEvent @EventType='TimedSubscription', @EventData= @SubscriptionID
+
+	----------------------------
+	Waitfor Delay '00:02'
+
+	/***Actualizacion De Parametros***/
+	UPDATE ReportServer.dbo.subscriptions
+	SET
+		ExtensionSettings = x.ExtensionSettings,
+		Parameters = x.Parameters
+	FROM ReportServer.dbo.subscriptions s
+	INNER JOIN	(
+					SELECT
+						SubscriptionID,
+						CAST(CONVERT(VARCHAR(MAX),ExtensionSettings) AS NTEXT) ExtensionSettings,
+						CAST(CONVERT(VARCHAR(MAX),Parameters) AS NTEXT) Parameters
+					FROM #XML_PRE
+				) x ON s.SubscriptionID = x.SubscriptionID
+	WHERE s.SubscriptionID = @SubscriptionID
+
+	/***Regresa La Configuracion Del Reporte 'Nombre Reporte'***/
+
+	Update c 
+		set 
+			c.Path = replace(c.Path, @Nombre, '')
+	from ReportServer.dbo.Subscriptions s 
+	Inner Join ReportServer.dbo.Catalog c 
+		on s.Report_OID=c.ItemID
+	where s.SubscriptionID = @SubscriptionID
+
+	SET QUOTED_IDENTIFIER ON
+
+	Drop table  #XML_POST
+	Drop table  #XML_PRE
+
+END
